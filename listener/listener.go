@@ -24,7 +24,7 @@ func New(config config.Config, callback func(context.Context, uint32, string, st
 }
 
 func (l *Listener) Start(ctx context.Context) error {
-	fmt.Println("Starting Server")
+	fmt.Println("Starting Listener")
 	conn, err := pgx.Connect(ctx, l.config.DatabaseURL)
 	if err != nil {
 		return err

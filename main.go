@@ -3,18 +3,18 @@ package main
 import (
 	"context"
 	"errors"
-	"fmt"
 	"log"
 	"os"
 	"os/signal"
 	"syscall"
 	"themiyadk/pg-notify/config"
+	"themiyadk/pg-notify/dashboard"
 	"themiyadk/pg-notify/listener"
-)
+	"themiyadk/pg-notify/metrics"
+	"time"
 
-func eventHandler(ctx context.Context, PID uint32, channel string, payload string) {
-	fmt.Println(PID, channel, payload)
-}
+	"golang.org/x/sync/errgroup"
+)
 
 func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
@@ -25,8 +25,27 @@ func main() {
 		log.Fatalf("failed to load config: %v", err)
 	}
 
+	store := metrics.NewStore(5 * time.Minute)
+	hub := dashboard.NewHub()
+
+	eventHandler := func(_ context.Context, _ uint32, channel string, payload string) {
+		receivedAt := time.Now().UTC()
+		delayMS := metrics.IngestDelayMS(payload, receivedAt)
+		store.Add(channel, delayMS, receivedAt)
+		hub.Notify()
+	}
+
 	l := listener.New(cfg, eventHandler)
-	if err := l.Start(ctx); err != nil && !errors.Is(err, context.Canceled) {
-		log.Fatalf("listener exited: %v", err)
+
+	g, gctx := errgroup.WithContext(ctx)
+	g.Go(func() error {
+		return l.Start(gctx)
+	})
+	g.Go(func() error {
+		return dashboard.StartServer(gctx, cfg.Port, store, hub)
+	})
+
+	if err := g.Wait(); err != nil && !errors.Is(err, context.Canceled) {
+		log.Fatalf("service exited: %v", err)
 	}
 }
