@@ -20,7 +20,7 @@ func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
-	cfg, err := config.New()
+	cfg, err := config.NewFromFile("pg-notify.cfg")
 	if err != nil {
 		log.Fatalf("failed to load config: %v", err)
 	}
