@@ -2,7 +2,7 @@ package listener
 
 import (
 	"context"
-	"fmt"
+	"log"
 	"themiyadk/pg-notify/config"
 
 	"github.com/jackc/pgx/v5"
@@ -24,13 +24,13 @@ func New(config config.Config, callback func(context.Context, uint32, string, st
 }
 
 func (l *Listener) Start(ctx context.Context) error {
-	fmt.Println("Starting Listener")
+	log.Print("Starting Listener")
 	conn, err := pgx.Connect(ctx, l.config.DatabaseURL)
 	if err != nil {
 		return err
 	}
 	defer conn.Close(ctx)
-	for _, ch := range l.config.EventName {
+	for _, ch := range l.config.EventNames {
 		ident := pgx.Identifier{ch}.Sanitize()
 		if _, err := conn.Exec(ctx, "LISTEN "+ident); err != nil {
 			return err

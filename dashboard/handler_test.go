@@ -1,7 +1,7 @@
 package dashboard
 
 import (
-	"bufio"
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -11,60 +11,90 @@ import (
 	"time"
 )
 
-func TestAPIMetricsReturnsSnapshot(t *testing.T) {
+func TestIndexEndpoint(t *testing.T) {
 	store := metrics.NewStore(5 * time.Minute)
 	hub := NewHub()
-	now := time.Date(2026, 3, 8, 10, 0, 0, 0, time.UTC)
-	store.Add("orders_inserted", 25, now)
+	handler := NewHandler(store, hub)
 
-	ts := httptest.NewServer(NewHandler(store, hub))
-	defer ts.Close()
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	rec := httptest.NewRecorder()
 
-	res, err := http.Get(ts.URL + "/api/metrics")
-	if err != nil {
-		t.Fatalf("failed request: %v", err)
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d", rec.Code)
 	}
-	defer res.Body.Close()
-
-	if res.StatusCode != http.StatusOK {
-		t.Fatalf("expected 200, got %d", res.StatusCode)
+	if !strings.Contains(rec.Header().Get("Content-Type"), "text/html") {
+		t.Fatalf("expected html content type, got %q", rec.Header().Get("Content-Type"))
 	}
-
-	var snap metrics.Snapshot
-	if err := json.NewDecoder(res.Body).Decode(&snap); err != nil {
-		t.Fatalf("failed decode: %v", err)
-	}
-	if snap.WindowSeconds != 300 {
-		t.Fatalf("expected window_seconds=300, got %d", snap.WindowSeconds)
+	if !strings.Contains(rec.Body.String(), "Notification Metrics") {
+		t.Fatalf("expected dashboard html in body")
 	}
 }
 
-func TestSSEEventsEmitsMetricsEvent(t *testing.T) {
+func TestMetricsEndpoint(t *testing.T) {
 	store := metrics.NewStore(5 * time.Minute)
-	hub := NewHub()
-	now := time.Date(2026, 3, 8, 10, 0, 0, 0, time.UTC)
+	now := time.Now().UTC()
 	store.Add("orders_inserted", 10, now)
+	store.Add("orders_inserted", 20, now)
+	hub := NewHub()
+	handler := NewHandler(store, hub)
 
-	ts := httptest.NewServer(NewHandler(store, hub))
-	defer ts.Close()
+	req := httptest.NewRequest(http.MethodGet, "/api/metrics", nil)
+	rec := httptest.NewRecorder()
 
-	client := &http.Client{Timeout: 3 * time.Second}
-	res, err := client.Get(ts.URL + "/events")
-	if err != nil {
-		t.Fatalf("failed connect sse: %v", err)
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d", rec.Code)
 	}
-	defer res.Body.Close()
-
-	reader := bufio.NewReader(res.Body)
-	deadline := time.Now().Add(2 * time.Second)
-	for time.Now().Before(deadline) {
-		line, err := reader.ReadString('\n')
-		if err != nil {
-			t.Fatalf("failed read sse line: %v", err)
-		}
-		if strings.HasPrefix(line, "event: metrics") {
-			return
-		}
+	if !strings.Contains(rec.Header().Get("Content-Type"), "application/json") {
+		t.Fatalf("expected json content type, got %q", rec.Header().Get("Content-Type"))
 	}
-	t.Fatal("did not receive metrics event")
+
+	var got metrics.Snapshot
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("failed to decode json: %v", err)
+	}
+	if got.Count != 2 {
+		t.Fatalf("expected count 2, got %d", got.Count)
+	}
+	if _, ok := got.Channels["orders_inserted"]; !ok {
+		t.Fatalf("expected channel orders_inserted in response")
+	}
+}
+
+func TestEventsEndpointSendsMetricsEvent(t *testing.T) {
+	store := metrics.NewStore(5 * time.Minute)
+	store.Add("orders_inserted", 15, time.Now().UTC())
+	hub := NewHub()
+	handler := NewHandler(store, hub)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	req := httptest.NewRequest(http.MethodGet, "/events", nil).WithContext(ctx)
+	rec := httptest.NewRecorder()
+
+	done := make(chan struct{})
+	go func() {
+		handler.ServeHTTP(rec, req)
+		close(done)
+	}()
+
+	time.Sleep(20 * time.Millisecond)
+	cancel()
+	<-done
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d", rec.Code)
+	}
+	if got := rec.Header().Get("Content-Type"); got != "text/event-stream" {
+		t.Fatalf("expected text/event-stream content type, got %q", got)
+	}
+	body := rec.Body.String()
+	if !strings.Contains(body, "event: metrics") {
+		t.Fatalf("expected SSE event name in body, got %q", body)
+	}
+	if !strings.Contains(body, "data: ") {
+		t.Fatalf("expected SSE data payload in body, got %q", body)
+	}
 }
