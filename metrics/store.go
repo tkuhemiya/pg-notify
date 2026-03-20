@@ -1,6 +1,7 @@
 package metrics
 
 import (
+	"log"
 	"math"
 	"sort"
 	"sync"
@@ -114,18 +115,37 @@ func (s *Store) Snapshot(now time.Time) Snapshot {
 		}
 	}
 
+	// Emit a diagnostic log if tail percentiles are large so we can inspect contributing events.
+	const warnThresholdMS = 2000.0
+	if res.P99DelayMS > warnThresholdMS {
+		// copy events and sort by delay desc to show top offenders
+		evs := append([]eventRecord(nil), s.events...)
+		sort.Slice(evs, func(i, j int) bool { return evs[i].delayMS > evs[j].delayMS })
+		n := 10
+		if len(evs) < n {
+			n = len(evs)
+		}
+		log.Printf("metrics: high tail percentiles: p90=%.0fms p99=%.0fms count=%d (showing top %d events):", res.P90DelayMS, res.P99DelayMS, res.Count, n)
+		for i := 0; i < n; i++ {
+			e := evs[i]
+			log.Printf("  event[%d] channel=%s receivedAt=%s delay=%.0fms", i, e.channel, e.receivedAt.UTC().Format(time.RFC3339Nano), e.delayMS)
+		}
+	}
+
 	return res
 }
 
 func (s *Store) pruneLocked(now time.Time) {
 	cutoff := now.Add(-s.window)
-	idx := 0
-	for idx < len(s.events) && s.events[idx].receivedAt.Before(cutoff) {
-		idx++
+	// keep only events with receivedAt >= cutoff
+	j := 0
+	for _, ev := range s.events {
+		if !ev.receivedAt.Before(cutoff) {
+			s.events[j] = ev
+			j++
+		}
 	}
-	if idx > 0 {
-		s.events = s.events[idx:]
-	}
+	s.events = s.events[:j]
 }
 
 func nearestRankPercentile(values []float64, percentile float64) float64 {
