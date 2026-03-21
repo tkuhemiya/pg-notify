@@ -2,18 +2,16 @@ package main
 
 import (
 	"context"
-	"errors"
 	"log"
 	"os"
 	"os/signal"
+	"sync"
 	"syscall"
 	"themiyadk/pg-notify/config"
 	"themiyadk/pg-notify/dashboard"
 	"themiyadk/pg-notify/listener"
 	"themiyadk/pg-notify/metrics"
 	"time"
-
-	"golang.org/x/sync/errgroup"
 )
 
 func main() {
@@ -37,15 +35,18 @@ func main() {
 
 	l := listener.New(cfg, eventHandler)
 
-	g, gctx := errgroup.WithContext(ctx)
-	g.Go(func() error {
-		return l.Start(gctx)
-	})
-	g.Go(func() error {
-		return dashboard.StartServer(gctx, cfg.Port, store, hub)
-	})
+	var wg sync.WaitGroup
+	wg.Add(2)
 
-	if err := g.Wait(); err != nil && !errors.Is(err, context.Canceled) {
-		log.Fatalf("service exited: %v", err)
-	}
+	go func() {
+		defer wg.Done()
+		l.Start(ctx)
+	}()
+
+	go func() {
+		defer wg.Done()
+		dashboard.StartServer(ctx, cfg.Port, store, hub)
+	}()
+
+	wg.Wait()
 }

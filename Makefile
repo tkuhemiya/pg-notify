@@ -45,7 +45,7 @@ simulate-burst:
 		while [ $$i -lt $(SIMULATION_BATCH) ]; do \
 			i=$$((i + 1)); \
 			echo "    request $$i/$(SIMULATION_BATCH)"; \
-			docker exec -i $(DB_CONTAINER) psql -U postgres -d pg_notify -c "SELECT simulate_orders(1);" >/dev/null; \
+			docker exec -i $(DB_CONTAINER) psql -U postgres -d pg_notify -c "SELECT simulate_activity(1);" >/dev/null; \
 			if [ $$i -lt $(SIMULATION_BATCH) ]; then \
 				sleep 0.1; \
 			fi; \

@@ -24,11 +24,6 @@ func NewFromFile(path string) (Config, error) {
 		return Config{}, fmt.Errorf("failed to parse %s as json: %w", path, err)
 	}
 
-	port := cfg.Port
-	if port <= 0 {
-		port = 8080
-	}
-
 	if cfg.DatabaseURL == "" {
 		return Config{}, errors.New("no DATABASE_URL given in pg-notify.cfg")
 	}

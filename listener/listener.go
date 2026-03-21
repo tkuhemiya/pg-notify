@@ -31,14 +31,15 @@ func (l *Listener) Start(ctx context.Context) error {
 	}
 	defer conn.Close(ctx)
 	for _, ch := range l.config.EventNames {
-		ident := pgx.Identifier{ch}.Sanitize()
-		if _, err := conn.Exec(ctx, "LISTEN "+ident); err != nil {
+		identifier := pgx.Identifier{ch}.Sanitize()
+		if _, err := conn.Exec(ctx, "LISTEN "+identifier); err != nil {
 			return err
 		}
 	}
 	for {
 		n, err := conn.WaitForNotification(ctx)
 		if err != nil {
+			// stop for ctr+c
 			if ctx.Err() != nil {
 				return nil
 			}

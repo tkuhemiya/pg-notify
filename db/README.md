@@ -30,7 +30,7 @@ postgres://postgres:postgres@localhost:5432/pg_notify?sslmode=disable
 Single burst:
 
 ```bash
-docker exec -i pg-notify-db psql -U postgres -d pg_notify -c "SELECT simulate_orders(500);"
+docker exec -i pg-notify-db psql -U postgres -d pg_notify -c "SELECT simulate_activity(500);"
 ```
 
 Continuous load:
@@ -38,5 +38,7 @@ Continuous load:
 ```bash
 ./db/simulate-load.sh pg-notify-db 50 1
 ```
+
+Each invocation of `simulate_activity` pumps both `orders_inserted` and `shipments_created` notifications so the dashboard can show multiple channels.
 
 Arguments are: `container_name batch_size sleep_seconds`.

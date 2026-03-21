@@ -10,8 +10,6 @@ type payloadCreatedAt struct {
 }
 
 func IngestDelayMS(payload string, receivedAt time.Time) float64 {
-	receivedAt = receivedAt.UTC()
-
 	var parsed payloadCreatedAt
 	if err := json.Unmarshal([]byte(payload), &parsed); err != nil {
 		return 0

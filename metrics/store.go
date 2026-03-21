@@ -56,16 +56,14 @@ func (s *Store) Add(channel string, delayMS float64, receivedAt time.Time) {
 		delayMS:    delayMS,
 		channel:    channel,
 	})
-	s.pruneLocked(receivedAt.UTC())
+	s.removeOldEvents(receivedAt.UTC())
 }
 
 func (s *Store) Snapshot(now time.Time) Snapshot {
-	now = now.UTC()
-
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	s.pruneLocked(now)
+	s.removeOldEvents(now)
 
 	res := Snapshot{
 		WindowSeconds: int(s.window.Seconds()),
@@ -135,7 +133,7 @@ func (s *Store) Snapshot(now time.Time) Snapshot {
 	return res
 }
 
-func (s *Store) pruneLocked(now time.Time) {
+func (s *Store) removeOldEvents(now time.Time) {
 	cutoff := now.Add(-s.window)
 	// keep only events with receivedAt >= cutoff
 	j := 0
